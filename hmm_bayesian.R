@@ -5,7 +5,7 @@ library(gtools) #dirichlet distribution
 library(actuar) #rinvgamma random variable
 
 #1 generate data
-HMM.data=function(X,pi.0,pi.t,Beta.t,Sigma.t,loc=F){
+HMM.data=function(X,pi.0,pi.t,Beta.t,Sigma.t,information=T){
   n=nrow(X)
   k=length(pi.0)
   Y=matrix(NA,n,dim(pi.t)[3]+1)
@@ -23,8 +23,15 @@ HMM.data=function(X,pi.0,pi.t,Beta.t,Sigma.t,loc=F){
     #Y[,i+1]=rnorm(n,mean=sum(X%*%Beta.t[S.temp,,i+1]),sd=sqrt(Sigma.t[S.temp,i+1]))   #faster
     S.old=S.temp
   }
-  if(loc)
-    return(list(Y=Y,S=S))
+  if(information){
+    True.Value=list()  #True Value
+    True.Value$beta=beta.t
+    True.Value$sigma=sigma.t
+    True.Value$init.distribution=Prob
+    True.Value$transfer.matrix=Prob.t
+    
+    return(list(Y=Y,S=S,TrueValue=True.Value))
+    }
   else
     return(Y)
 }
@@ -186,7 +193,16 @@ gibbs.hmm=function(Y,X,b0,B0,c0,C0,E0,Et,S,m,rep=1){
    }
    ParaMeters=list(p.betak=p.betak,p.sigmak=p.sigmak,p.D=p.D,p.Dt=p.Dt)
    class(ParaMeters)="hmm"
-   return(ParaMeters)
+   if(rep==1)
+     return(ParaMeters)
+   else{
+     groups=list()
+     groups[[1]]=ParaMeters
+     for(r in 2:rep)
+       groups[[r]]=gibbs.hmm(Y,X,b0,B0,c0,C0,E0,Et,S,m,rep=1)
+     class(groups)='hmmgroups'
+   }
+   return(groups)
 }
 
 #method to summary hmm class
@@ -206,8 +222,57 @@ summary.hmm=function(data,n){
     return(summary.hmm)
 }
 
+summary.hmmgroups=function(data,n,TrueValue=NULL){
+  r=length(data)
+  Sample=summary(data[[1]],n)
+  
+  beta=array(dim=c(dim(Sample$beta),r))
+  sigma=array(dim=c(dim(Sample$sigma),r))
+  init.distribution=array(dim=c(length(Sample$init.distribution),r))
+  transfer.matrix=array(dim=c(dim(Sample$transfer.matrix),r))
+  
+  for(i in 1:r){
+    tem=summary(data[[i]],n)
+    
+    beta[,,,i]=tem$beta
+    sigma[,,i]=tem$sigma
+    init.distribution[,i]=tem$init.distribution
+    transfer.matrix[,,,i]=tem$transfer.matrix
+  }
+  if(is.null(TrueValue))
+    res=list(
+      beta=apply(beta,1:3,mean),beta.sd=apply(beta,1:3,sd),
+      sigma=apply(sigma,1:2,mean),sigma.sd=apply(sigma,1:2,sd),
+      init.distribution=apply(init.distribution,1,mean),
+      init.distribution.sd=apply(init.distribution,1,sd),
+      transfer.matrix=apply(transfer.matrix,1:3,mean),
+      transfer.matrix.sd=apply(transfer.matrix,1:3,sd)
+    )
+  else
+    res=list(
+      beta.TrueValue=TrueValue$beta,
+      beta.estimate=apply(beta,1:3,mean),
+      beta.sd=apply(beta,1:3,sd),
+      
+      sigma.TrueValue=TrueValue$sigma,
+      sigma.estimate=apply(sigma,1:2,mean),
+      sigma.sd=apply(sigma,1:2,sd),
+      
+      init.distribution.TrueValue=TrueValue$init.distribution,
+      init.distribution.estimate=apply(init.distribution,1,mean),
+      init.distribution.sd=apply(init.distribution,1,sd),
+      
+      transfer.matrix.TrueValue=TrueValue$transfer.matrix,
+      transfer.matrix.estimate=apply(transfer.matrix,1:3,mean),
+      transfer.matrix.sd=apply(transfer.matrix,1:3,sd)
+    )
+  
+  return(res)
+}
+
 #test result
-X=matrix(c(rep(1,1000),runif(1000,0,5)),1000,2)
+sz=800  #sample size
+X=matrix(c(rep(1,sz),runif(sz,0,5)),sz,2)
 beta=rbind(c(-1,0.5),c(1,-0.5))
 beta.t=rep(beta,3)
 dim(beta.t)=c(2,2,3)
@@ -217,9 +282,16 @@ dim(sigma.t)=c(2,3)
 Prob=c(0.4,0.6)
 Prob.t=c(0.8,0.2,0.2,0.8,0.8,0.2,0.2,0.8)
 dim(Prob.t)=c(2,2,2)
+
+
 temp=HMM.data(X,Prob,Prob.t,beta.t,sigma.t,T)
 Y=temp$Y
-S=temp$S
+TV=temp$TrueValue  #True value
+S=HMM.data(X,Prob,Prob.t,beta.t,sigma.t,T)$S
+#generate half random S
+S=sample.int(length(Prob),nrow(Y)*ncol(Y),replace = T)
+dim(S)=dim(Y)
+#generate completely random S
 
 b0=solve(t(X)%*%X)%*%t(X)%*%Y[,1]
 B0=1.5*diag(2)
@@ -228,5 +300,6 @@ C0=0.36*var(as.vector(Y))
 E0=c(1,1)
 Et=Prob.t*2
 m=1500
-system.time(g<-gibbs.hmm(Y,X,b0,B0,c0,C0,E0,Et,S,m,rep=1))
-summary(g,m-500)
+system.time(g<-gibbs.hmm(Y,X,b0,B0,c0,C0,E0,Et,S,m,rep=50))
+Sys.time()
+summary(g,m-500,TV)
