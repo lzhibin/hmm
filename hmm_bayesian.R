@@ -1,6 +1,6 @@
 ######################################################
 #0 load package
-library(MASS)   #multiple random normal
+library(MASS)   #multiple random normal   
 library(gtools) #dirichlet distribution
 library(actuar) #rinvgamma random variable
 
@@ -35,7 +35,7 @@ HMM.data=function(X,pi.0,pi.t,Beta.t,Sigma.t,loc=F){
 gibbs.hmm=function(Y,X,b0,B0,c0,C0,E0,Et,S,m,rep=1){
   #initial value
   d=ncol(X)    #numbers of beta
-  p=length(E0) #levels of hidden variable
+  p=length(E0) #levels of hidden variable 
   Ti=ncol(Y)   #numbers of periods
   NY=nrow(Y)
   B0.inv=solve(B0)
@@ -55,7 +55,7 @@ gibbs.hmm=function(Y,X,b0,B0,c0,C0,E0,Et,S,m,rep=1){
   p.D=array(dim=c(p,m))
   p.Dt=array(dim=c(p,p,Ti-1,m))
 
-
+  
   temp.beta=mvrnorm(p,b0,B0)
   temp.sigma=rinvgamma(p,c0,scale=C0)
   for(t in 1:Ti){
@@ -63,7 +63,7 @@ gibbs.hmm=function(Y,X,b0,B0,c0,C0,E0,Et,S,m,rep=1){
     sigmak[,t]=temp.sigma
   }
 
-
+  
    for(i in 1:m){
     for(t in 1:Ti){
       NS[,t]=sapply(1:p,function(x)sum(S[,t]==x))
@@ -78,27 +78,27 @@ gibbs.hmm=function(Y,X,b0,B0,c0,C0,E0,Et,S,m,rep=1){
       }
     }
     #generate transfer matrix
-
+  
    # D=Prob #fix initial distribution and transfer matrix  ###code for test
    # Dt=Prob.t
    # dim(Dt)=c(2,2,2)
-
+    
     for(t in 1:Ti){
       for(j in 1:p){
         Bk[,,j,t]=solve(B0.inv+t(X[S[,t]==j,])%*%X[S[,t]==j,]/sigmak[j,t])
         bk[j,,t]=Bk[,,j,t]%*%(B0.inv%*%b0+t(X[S[,t]==j,])%*%Y[S[,t]==j,t]/sigmak[j,t])
-
+        
         betak[j,,t]=mvrnorm(1,bk[j,,t],Bk[,,j,t])
-
+        
         ck[j,t]=c0+NS[j,t]/2
         Ck[j,t]=C0+sum((Y[S[,t]==j,t]-X[S[,t]==j,]%*%betak[j,,t])^2)/2
-
+        
         sigmak[j,t]=rinvgamma(1,ck[j,t],scale=Ck[j,t])
-
+        
       }
     }
 
-
+    
     #FFBS renew hidden variable
     # P.S.pred=array(dim=c(NY,p,Ti))
     # P.S.Update=array(dim=c(NY,p,Ti))
@@ -120,7 +120,7 @@ gibbs.hmm=function(Y,X,b0,B0,c0,C0,E0,Et,S,m,rep=1){
     #   }
     # }
     # #T>1ʱ
-
+    
     # #renew S
     # Post.S=array(dim = c(NY,p,Ti))
     # for(i in 1:NY){
@@ -133,8 +133,8 @@ gibbs.hmm=function(Y,X,b0,B0,c0,C0,E0,Et,S,m,rep=1){
     #     S[i,t]=sample.int(p,1,prob = tem)
     #   }
     # }
-    #
-
+    # 
+    
     #FFBS renew hidden variable altnative code
     f.density=function(y,x,beta,sigma){
       m=as.vector(beta%*%x)
@@ -177,7 +177,7 @@ gibbs.hmm=function(Y,X,b0,B0,c0,C0,E0,Et,S,m,rep=1){
     #print(sigmak)
     #print(D)
     #print(Dt)
-
+    
     #store parameters
     p.betak[,,,i]=betak
     p.sigmak[,,i]=sigmak
@@ -219,14 +219,14 @@ Prob.t=c(0.8,0.2,0.2,0.8,0.8,0.2,0.2,0.8)
 dim(Prob.t)=c(2,2,2)
 temp=HMM.data(X,Prob,Prob.t,beta.t,sigma.t,T)
 Y=temp$Y
-s=temp$s
+S=temp$S
 
-b0=solve(t(x)%*%x)%*%t(x)%*%y[,1]
-b0=1.5*diag(2)
+b0=solve(t(X)%*%X)%*%t(X)%*%Y[,1]
+B0=1.5*diag(2)
 c0=1.28
-c0=0.36*var(as.vector(y))
-e0=c(1,1)
-et=prob.t*2
-m=15
-system.time(g<-gibbs.hmm(y,x,b0,b0,c0,c0,e0,et,s,m,rep=1))
+C0=0.36*var(as.vector(Y))
+E0=c(1,1)
+Et=Prob.t*2
+m=1500
+system.time(g<-gibbs.hmm(Y,X,b0,B0,c0,C0,E0,Et,S,m,rep=1))
 summary(g,m-500)
