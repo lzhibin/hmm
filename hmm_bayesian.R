@@ -213,12 +213,19 @@ summary.hmm=function(data,n){
     }
 
     beta=apply(data$p.betak[,,,(len-n+1):len],c(1,2,3),mean)
+    beta.sd=apply(data$p.betak[,,,(len-n+1):len],c(1,2,3),sd)
     sigma=apply(data$p.sigmak[,,(len-n+1):len],c(1,2),mean)
+    sigma.sd=apply(data$p.sigmak[,,(len-n+1):len],c(1,2),sd)
     init.distribution=apply(data$p.D[,(len-n+1):len],1,mean)
+    init.distribution.sd=apply(data$p.D[,(len-n+1):len],1,sd)
     transfer.matrix=apply(data$p.Dt[,,,(len-n+1):len],c(1,2,3),mean)
-    summary.hmm=list(beta=beta,sigma=sigma,
+    transfer.matrix.sd=apply(data$p.Dt[,,,(len-n+1):len],c(1,2,3),sd)
+    
+    summary.hmm=list(beta=beta,beta.sd=beta.sd,sigma=sigma,sigma.sd=sigma.sd,
                      init.distribution=init.distribution,
-                     transfer.matrix=transfer.matrix)
+                     init.distribution.sd=init.distribution.sd,
+                     transfer.matrix=transfer.matrix,
+                     transfer.matrix.sd=transfer.matrix.sd)
     return(summary.hmm)
 }
 
@@ -227,44 +234,52 @@ summary.hmmgroups=function(data,n,TrueValue=NULL){
   Sample=summary(data[[1]],n)
   
   beta=array(dim=c(dim(Sample$beta),r))
+  beta.sd=array(dim=c(dim(Sample$beta.sd),r))
   sigma=array(dim=c(dim(Sample$sigma),r))
+  sigma.sd=array(dim=c(dim(Sample$sigma.sd),r))
   init.distribution=array(dim=c(length(Sample$init.distribution),r))
+  init.distribution.sd=array(dim=c(length(Sample$init.distribution.sd),r))
   transfer.matrix=array(dim=c(dim(Sample$transfer.matrix),r))
+  transfer.matrix.sd=array(dim=c(dim(Sample$transfer.matrix.sd),r))
   
   for(i in 1:r){
     tem=summary(data[[i]],n)
     
     beta[,,,i]=tem$beta
+    beta.sd[,,,i]=tem$beta.sd
     sigma[,,i]=tem$sigma
+    sigma.sd[,,i]=tem$sigma.sd
     init.distribution[,i]=tem$init.distribution
+    init.distribution.sd[,i]=tem$init.distribution.sd
     transfer.matrix[,,,i]=tem$transfer.matrix
+    transfer.matrix.sd[,,,i]=tem$transfer.matrix.sd
   }
   if(is.null(TrueValue))
     res=list(
-      beta=apply(beta,1:3,mean),beta.sd=apply(beta,1:3,sd),
-      sigma=apply(sigma,1:2,mean),sigma.sd=apply(sigma,1:2,sd),
+      beta=apply(beta,1:3,mean),beta.sd=apply(beta.sd,1:3,mean),
+      sigma=apply(sigma,1:2,mean),sigma.sd=apply(sigma.sd,1:2,mean),
       init.distribution=apply(init.distribution,1,mean),
-      init.distribution.sd=apply(init.distribution,1,sd),
+      init.distribution.sd=apply(init.distribution.sd,1,mean),
       transfer.matrix=apply(transfer.matrix,1:3,mean),
-      transfer.matrix.sd=apply(transfer.matrix,1:3,sd)
+      transfer.matrix.sd=apply(transfer.matrix.sd,1:3,mean)
     )
   else
     res=list(
       beta.TrueValue=TrueValue$beta,
       beta.estimate=apply(beta,1:3,mean),
-      beta.sd=apply(beta,1:3,sd),
+      beta.sd=apply(beta.sd,1:3,mean),
       
       sigma.TrueValue=TrueValue$sigma,
       sigma.estimate=apply(sigma,1:2,mean),
-      sigma.sd=apply(sigma,1:2,sd),
+      sigma.sd=apply(sigma.sd,1:2,mean),
       
       init.distribution.TrueValue=TrueValue$init.distribution,
       init.distribution.estimate=apply(init.distribution,1,mean),
-      init.distribution.sd=apply(init.distribution,1,sd),
+      init.distribution.sd=apply(init.distribution.sd,1,mean),
       
       transfer.matrix.TrueValue=TrueValue$transfer.matrix,
       transfer.matrix.estimate=apply(transfer.matrix,1:3,mean),
-      transfer.matrix.sd=apply(transfer.matrix,1:3,sd)
+      transfer.matrix.sd=apply(transfer.matrix.sd,1:3,mean)
     )
   
   return(res)
@@ -300,6 +315,6 @@ C0=0.36*var(as.vector(Y))
 E0=c(1,1)
 Et=Prob.t*2
 m=1500
-system.time(g<-gibbs.hmm(Y,X,b0,B0,c0,C0,E0,Et,S,m,rep=50))
+system.time(g<-gibbs.hmm(Y,X,b0,B0,c0,C0,E0,Et,S,m,rep=30))
 Sys.time()
 summary(g,m-500,TV)
