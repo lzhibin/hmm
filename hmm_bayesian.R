@@ -1,4 +1,4 @@
-######################################################
+h######################################################
 #0 load package
 library(MASS)   #multiple random normal   
 library(gtools) #dirichlet distribution
@@ -85,11 +85,7 @@ gibbs.hmm=function(Y,X,b0,B0,c0,C0,E0,Et,S,m,rep=1){
       }
     }
     #generate transfer matrix
-  
-   # D=Prob #fix initial distribution and transfer matrix  ###code for test
-   # Dt=Prob.t
-   # dim(Dt)=c(2,2,2)
-    
+      
     for(t in 1:Ti){
       for(j in 1:p){
         Bk[,,j,t]=solve(B0.inv+t(X[S[,t]==j,])%*%X[S[,t]==j,]/sigmak[j,t])
@@ -104,46 +100,9 @@ gibbs.hmm=function(Y,X,b0,B0,c0,C0,E0,Et,S,m,rep=1){
         
       }
     }
+    #renew beta and sigma
 
-    
-    #FFBS renew hidden variable
-    # P.S.pred=array(dim=c(NY,p,Ti))
-    # P.S.Update=array(dim=c(NY,p,Ti))
-    # P.S.pred[,,1]=matrix(rep(D,NY),NY,p,byrow = T)
-    # for(i in 1:NY){
-    #   for(j in 1:p){
-    #     P.S.Update[i,j,1]=P.S.pred[i,j,1]*dnorm(Y[i,1],sum(X[i,]*betak[j,,1]),sqrt(sigmak[j,1]))
-    #   }
-    # }
-    # for(i in 1:NY){
-    # }
-    # #T=1ʱ
-    # for(t in 2:Ti){
-    #   P.S.pred[,,t]=P.S.Update[,,t-1]%*%Dt[,,t-1]
-    #   for(i in 1:NY){
-    #     for(j in 1:p){
-    #       P.S.Update[i,j,t]=P.S.pred[i,j,t]*dnorm(Y[i,t],sum(X[i,]*betak[j,,t]),sqrt(sigmak[j,t]))
-    #     }
-    #   }
-    # }
-    # #T>1ʱ
-    
-    # #renew S
-    # Post.S=array(dim = c(NY,p,Ti))
-    # for(i in 1:NY){
-    #   S[i,Ti]=sample.int(p,1,prob = P.S.Update[i,,Ti])
-    #   for(t in (Ti-1):1){
-    #     tem=vector()
-    #     for(j in 1:p){
-    #       tem[j]=P.S.Update[i,j,t]*Dt[j,S[i,t+1],t]
-    #     }
-    #     S[i,t]=sample.int(p,1,prob = tem)
-    #   }
-    # }
-    # 
-    
-    #FFBS renew hidden variable altnative code
-    f.density=function(y,x,beta,sigma){
+      f.density=function(y,x,beta,sigma){
       m=as.vector(beta%*%x)
       s=sqrt(sigma)
       res=dnorm(y,m,s)
@@ -163,6 +122,7 @@ gibbs.hmm=function(Y,X,b0,B0,c0,C0,E0,Et,S,m,rep=1){
         S[nr,t]=sample.int(p,1,prob = s.temp)
       }
     }
+    #FFBS renew lacation parameter
 
 
     #label switch
@@ -179,11 +139,6 @@ gibbs.hmm=function(Y,X,b0,B0,c0,C0,E0,Et,S,m,rep=1){
 
     }
 
-
-    #print(betak)
-    #print(sigmak)
-    #print(D)
-    #print(Dt)
     
     #store parameters
     p.betak[,,,i]=betak
@@ -206,7 +161,7 @@ gibbs.hmm=function(Y,X,b0,B0,c0,C0,E0,Et,S,m,rep=1){
 }
 
 #method to summary hmm class
-summary.hmm=function(data,n){
+summary.hmm=function(data,n,TrueValue=NULL){
     len=dim(data$p.D)[2]
     if(len<n){
       print("error! need more data")
@@ -226,6 +181,17 @@ summary.hmm=function(data,n){
                      init.distribution.sd=init.distribution.sd,
                      transfer.matrix=transfer.matrix,
                      transfer.matrix.sd=transfer.matrix.sd)
+    if(! is.null(TrueValue))
+        summary.hmm=list(beta.TrueValue=TrueValue$beta,
+                         beta=beta,beta.sd=beta.sd,
+                         sigma.TrueValue=TrueValue$sigma,
+                         sigma=sigma,sigma.sd=sigma.sd,
+                         init.distribution..TrueValue=TrueValue$init.distribution,
+                         init.distribution=init.distribution,
+                         init.distribution.sd=init.distribution.sd,
+                         transfer.matrix.TrueValue=TrueValue$transfer.matrix,
+                         transfer.matrix=transfer.matrix,
+                         transfer.matrix.sd=transfer.matrix.sd)
     return(summary.hmm)
 }
 
@@ -286,7 +252,7 @@ summary.hmmgroups=function(data,n,TrueValue=NULL){
 }
 
 #test result
-sz=800  #sample size
+sz=500  #sample size
 X=matrix(c(rep(1,sz),runif(sz,0,5)),sz,2)
 beta=rbind(c(-1,0.5),c(1,-0.5))
 beta.t=rep(beta,3)
@@ -314,7 +280,8 @@ c0=1.28
 C0=0.36*var(as.vector(Y))
 E0=c(1,1)
 Et=Prob.t*2
-m=1500
-system.time(g<-gibbs.hmm(Y,X,b0,B0,c0,C0,E0,Et,S,m,rep=30))
+m=700
+system.time(g<-gibbs.hmm(Y,X,b0,B0,c0,C0,E0,Et,S,m,rep=1))
 Sys.time()
 summary(g,m-500,TV)
+
