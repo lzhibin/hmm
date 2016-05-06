@@ -1,4 +1,4 @@
-h######################################################
+######################################################
 #0 load package
 library(MASS)   #multiple random normal   
 library(gtools) #dirichlet distribution
@@ -39,7 +39,7 @@ HMM.data=function(X,pi.0,pi.t,Beta.t,Sigma.t,information=T){
 
 
 #2 MCMC
-gibbs.hmm=function(Y,X,b0,B0,c0,C0,E0,Et,S,m,rep=1){
+gibbs.hmm=function(Y,X,b0,B0,c0,C0,E0,Et,S,m,time.homogeneous=F,rep=1){
   #initial value
   d=ncol(X)    #numbers of beta
   p=length(E0) #levels of hidden variable 
@@ -69,21 +69,35 @@ gibbs.hmm=function(Y,X,b0,B0,c0,C0,E0,Et,S,m,rep=1){
     betak[,,t]=temp.beta
     sigmak[,t]=temp.sigma
   }
+  
 
   
    for(i in 1:m){
-    for(t in 1:Ti){
-      NS[,t]=sapply(1:p,function(x)sum(S[,t]==x))
-    }
-    D=rdirichlet(1,E0+NS[,1])
-    #generate init distribution
-
-    for(t in 1:(Ti-1)){
-      for(k in 1:p){
-        NSt[k,,t]=sapply(1:p,function(x)sum(S[S[,t]==k,t+1]==x))
-        Dt[k,,t]=rdirichlet(1,Et[k,,t]+NSt[k,,t])
-      }
-    }
+     for(t in 1:Ti){
+       NS[,t]=sapply(1:p,function(x)sum(S[,t]==x))
+     }
+     D=rdirichlet(1,E0+NS[,1])
+     #generate init distribution
+     
+     if(time.homogeneous){
+       for(k in 1:p){
+         for(t in 1:(Ti-1)){
+           NSt[k,,t]=sapply(1:p,function(x)sum(S[S[,t]==k,t+1]==x))
+         }
+         temp.Dt.k=rdirichlet(1,Et[k,,t]+apply(NSt[k,,],1,sum))
+         for(t in 1:(Ti-1)){
+           Dt[k,,t]=temp.Dt.k
+         }
+       }
+     }
+     else{
+       for(t in 1:(Ti-1)){
+         for(k in 1:p){
+           NSt[k,,t]=sapply(1:p,function(x)sum(S[S[,t]==k,t+1]==x))
+           Dt[k,,t]=rdirichlet(1,Et[k,,t]+NSt[k,,t])
+         }
+       }
+     }
     #generate transfer matrix
       
     for(t in 1:Ti){
@@ -281,7 +295,7 @@ C0=0.36*var(as.vector(Y))
 E0=c(1,1)
 Et=Prob.t*2
 m=700
-system.time(g<-gibbs.hmm(Y,X,b0,B0,c0,C0,E0,Et,S,m,rep=1))
+system.time(g<-gibbs.hmm(Y,X,b0,B0,c0,C0,E0,Et,S,m,time.homogeneous=T,rep=1))
 Sys.time()
 summary(g,m-500,TV)
 
