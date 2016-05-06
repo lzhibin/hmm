@@ -168,7 +168,7 @@ gibbs.hmm=function(Y,X,b0,B0,c0,C0,E0,Et,S,m,time.homogeneous=F,rep=1){
      groups=list()
      groups[[1]]=ParaMeters
      for(r in 2:rep)
-       groups[[r]]=gibbs.hmm(Y,X,b0,B0,c0,C0,E0,Et,S,m,rep=1)
+       groups[[r]]=gibbs.hmm(Y,X,b0,B0,c0,C0,E0,Et,S,m,time.homogeneous,rep=1)
      class(groups)='hmmgroups'
    }
    return(groups)
