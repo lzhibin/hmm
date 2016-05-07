@@ -3,6 +3,7 @@
 library(MASS)   #multiple random normal   
 library(gtools) #dirichlet distribution
 library(actuar) #rinvgamma random variable
+library(parallel) #speed up with multicore
 
 #1 generate data
 HMM.data=function(X,pi.0,pi.t,Beta.t,Sigma.t,information=T){
@@ -39,7 +40,10 @@ HMM.data=function(X,pi.0,pi.t,Beta.t,Sigma.t,information=T){
 
 
 #2 MCMC
-gibbs.hmm=function(Y,X,b0,B0,c0,C0,E0,Et,S,m,time.homogeneous=F,rep=1){
+gibbs.hmm<-function(Y,X,b0,B0,c0,C0,E0,Et,S,m,time.homogeneous=F,rep=1){
+  library(MASS)   #multiple random normal   
+  library(gtools) #dirichlet distribution
+  library(actuar) #rinvgamma random variable
   #initial value
   d=ncol(X)    #numbers of beta
   p=length(E0) #levels of hidden variable 
@@ -174,6 +178,22 @@ gibbs.hmm=function(Y,X,b0,B0,c0,C0,E0,Et,S,m,time.homogeneous=F,rep=1){
    return(groups)
 }
 
+#a parallel version of hmm
+gibbs.hmm.par=function(Y,X,b0,B0,c0,C0,E0,Et,S,m,time.homogeneous=F,rep=10,cl.num=detectCores()){
+  par.fun=function(i){
+    return(gibbs.hmm(Y,X,b0,B0,c0,C0,E0,Et,S,m,time.homogeneous,rep=1))
+  }
+  if(rep==1)
+    return(par.fun(1))
+  cl=makeCluster(cl.num)
+  clusterExport(cl,varlist = c('gibbs.hmm','Y','X','b0','B0','c0','C0','E0','Et','S','m','time.homogeneous'),environment())
+  result=parLapply(cl,1:rep,par.fun)
+  stopCluster(cl)
+  class(result)='hmmgroups'
+  return(result)
+}
+
+
 #method to summary hmm class
 summary.hmm=function(data,n,TrueValue=NULL){
     len=dim(data$p.D)[2]
@@ -266,7 +286,7 @@ summary.hmmgroups=function(data,n,TrueValue=NULL){
 }
 
 #test result
-sz=500  #sample size
+sz=700  #sample size
 X=matrix(c(rep(1,sz),runif(sz,0,5)),sz,2)
 beta=rbind(c(-1,0.5),c(1,-0.5))
 beta.t=rep(beta,3)
@@ -294,8 +314,9 @@ c0=1.28
 C0=0.36*var(as.vector(Y))
 E0=c(1,1)
 Et=Prob.t*2
-m=700
-system.time(g<-gibbs.hmm(Y,X,b0,B0,c0,C0,E0,Et,S,m,time.homogeneous=T,rep=1))
+m=1000
+system.time(g1<-gibbs.hmm(Y,X,b0,B0,c0,C0,E0,Et,S,m,time.homogeneous=T,rep=4))
+system.time(g2<-gibbs.hmm.par(Y,X,b0,B0,c0,C0,E0,Et,S,m,time.homogeneous=T,rep=4))
 Sys.time()
-summary(g,m-500,TV)
-
+summary(g1,m-500,TV)
+summary(g2,m-500,TV)
