@@ -99,7 +99,7 @@ mcmc.hmm=function(Y,R,X,b0,B0,c0,C0,E0,Et,S,m,beta0_r=NULL,lambda_y=1,lambda_r=1
   for(t in 1:Ti)
     for(ny in 1:NY){
       if(is.na(Y[ny,t]))
-        Y[ny,t]=rnorm(1,X[ny,]%*%betak[S[ny,t],,t])
+        Y[ny,t]=rnorm(1,sum(X[ny,]*betak[S[ny,t],,t]))
     }
   
   #density function for FFBS to renew S
@@ -129,6 +129,7 @@ mcmc.hmm=function(Y,R,X,b0,B0,c0,C0,E0,Et,S,m,beta0_r=NULL,lambda_y=1,lambda_r=1
       temp[1,2]=sum(y)
       temp[2,1]=temp[1,2]
       temp[2,2]=sum(y^2)
+      temp=temp/4
       #it means beta=c(0,0)
     }
     else{
@@ -215,7 +216,7 @@ mcmc.hmm=function(Y,R,X,b0,B0,c0,C0,E0,Et,S,m,beta0_r=NULL,lambda_y=1,lambda_r=1
       rk=R[S==k]
       temp=mvrnorm(1,betak_r[k,],lambda_r*im_beta_r(yk))  #lambda_r to control accept rate
       alpha=min(1,ln_beta_r_ratio(rk,yk,temp,betak_r[k,]))
-      cat("acceptrate_beta:",alpha,"\n")  #to see the accept rate
+      #cat("acceptrate_beta:",alpha,"\n")  #to see the accept rate
       U01=runif(1)
       if(U01<alpha)
         betak_r[k,]=temp
@@ -228,7 +229,7 @@ mcmc.hmm=function(Y,R,X,b0,B0,c0,C0,E0,Et,S,m,beta0_r=NULL,lambda_y=1,lambda_r=1
           nyt.s=S[ny,t]
           temp=rnorm(1,Y[ny,t],sqrt(lambda_y*im_yi(betak_r[nyt.s,],sigmak[nyt.s,t])))
           alpha=min(1,ln_yi_ratio(beta=betak[nyt.s,,t],x=X[ny,],sigma=sigmak[nyt.s,t],y1=temp,y0=Y[ny,t]))
-          cat("acceptrate_yi:",alpha,"\n")  #to see the accept rate
+          #cat("acceptrate_yi:",alpha,"\n")  #to see the accept rate
           U01=runif(1)
           if(U01<alpha)
             Y[ny,t]=temp
@@ -301,8 +302,76 @@ summary.hmm.missing=function(data,n){
   return(summary.hmm)
 }
 
+summary.hmmgroups.missing=function(data,n,TrueValue=NULL){
+  r=length(data)
+  Sample=summary(data[[1]],n)
+  
+  beta=array(dim=c(dim(Sample$beta),r))
+  beta.sd=array(dim=c(dim(Sample$beta.sd),r))
+  sigma=array(dim=c(dim(Sample$sigma),r))
+  sigma.sd=array(dim=c(dim(Sample$sigma.sd),r))
+  init.distribution=array(dim=c(length(Sample$init.distribution),r))
+  init.distribution.sd=array(dim=c(length(Sample$init.distribution.sd),r))
+  transfer.matrix=array(dim=c(dim(Sample$transfer.matrix),r))
+  transfer.matrix.sd=array(dim=c(dim(Sample$transfer.matrix.sd),r))
+  beta_r=array(dim=c(dim(Sample$beta_r),r))
+  beta_r.sd=array(dim=c(dim(Sample$beta_r.sd),r))
+  
+  for(i in 1:r){
+    tem=summary(data[[i]],n)
+    
+    beta[,,,i]=tem$beta
+    beta.sd[,,,i]=tem$beta.sd
+    sigma[,,i]=tem$sigma
+    sigma.sd[,,i]=tem$sigma.sd
+    init.distribution[,i]=tem$init.distribution
+    init.distribution.sd[,i]=tem$init.distribution.sd
+    transfer.matrix[,,,i]=tem$transfer.matrix
+    transfer.matrix.sd[,,,i]=tem$transfer.matrix.sd
+    beta_r[,,i]=tem$beta_r
+    beta_r.sd[,,i]=tem$beta_r.sd
+    
+  }
+  if(is.null(TrueValue))
+    res=list(
+      beta=apply(beta,1:3,mean),beta.sd=apply(beta.sd,1:3,mean),
+      sigma=apply(sigma,1:2,mean),sigma.sd=apply(sigma.sd,1:2,mean),
+      init.distribution=apply(init.distribution,1,mean),
+      init.distribution.sd=apply(init.distribution.sd,1,mean),
+      transfer.matrix=apply(transfer.matrix,1:3,mean),
+      transfer.matrix.sd=apply(transfer.matrix.sd,1:3,mean),
+      beta_r=apply(beta_r,1:2,mean),
+      beta_r.sd=apply(beta_r.sd,1:2,mean)
+    )
+  else
+    res=list(
+      beta.TrueValue=TrueValue$beta,
+      beta.estimate=apply(beta,1:3,mean),
+      beta.sd=apply(beta.sd,1:3,mean),
+      
+      sigma.TrueValue=TrueValue$sigma,
+      sigma.estimate=apply(sigma,1:2,mean),
+      sigma.sd=apply(sigma.sd,1:2,mean),
+      
+      init.distribution.TrueValue=TrueValue$init.distribution,
+      init.distribution.estimate=apply(init.distribution,1,mean),
+      init.distribution.sd=apply(init.distribution.sd,1,mean),
+      
+      transfer.matrix.TrueValue=TrueValue$transfer.matrix,
+      transfer.matrix.estimate=apply(transfer.matrix,1:3,mean),
+      transfer.matrix.sd=apply(transfer.matrix.sd,1:3,mean),
+      
+      beta_r.TrueValue=TrueValue$beta_r,
+      beta_r=apply(beta_r,1:2,mean),
+      beta_r.sd=apply(beta_r.sd,1:2,mean)
+    )
+  
+  return(res)
+}
+
+
 #test parameter to generate missing data
-sz=1000  #sample size
+sz=1500  #sample size
 X=matrix(c(rep(1,sz),runif(sz,-5,5)),sz,2)
 beta=rbind(c(-2,1),c(2,-1))
 beta.t=rep(beta,3)
@@ -317,12 +386,13 @@ dim(Prob.t)=c(2,2,2)
 temp=HMM.data(X,Prob,Prob.t,beta.t,sigma.t,T)
 Y=temp$Y
 S=temp$S
-beta_r=array(c(2,2,-3,-3),dim=c(2,2))
+TV=temp$TrueValue
+beta_r=array(c(3,3,-0.5,-0.5),dim=c(2,2))
+TV$beta_r=beta_r
 temp.missing=HMM.data.missing(Y,S,beta_r)
 Y.missing=temp.missing$Y.missing
 R=temp.missing$R
 table(R)
-R[Y > 2]
 
 b0=solve(t(X)%*%X)%*%t(X)%*%Y[,1]
 B0=1.5*diag(2)
@@ -330,6 +400,9 @@ c0=1.28
 C0=0.36*var(as.vector(Y))
 E0=c(1,1)
 Et=Prob.t*2
-m=2000
-system.time(g<-mcmc.hmm(Y,R,X,b0,B0,c0,C0,E0,Et,S,m,beta_r,lambda_r = 5,lambda_y = 5))
-summary(g,m/2)
+m=10000
+system.time(g1<-mcmc.hmm(Y,R,X,b0,B0,c0,C0,E0,Et,S,m=5000,beta_r,lambda_r = 8,lambda_y = 5,rep=20))
+summary(g1,m/2,TV)
+beta_r0=array(rep(c(log(length(R)/sum(R==0)-1),0),each=dim(beta_r)[1]),dim=dim(beta_r))
+system.time(g2<-mcmc.hmm(Y.missing,R,X,b0,B0,c0,C0,E0,Et,S,m=10000,beta_r0,lambda_r = 8,lambda_y = 5,rep=10))
+summary(g2,m/2,TV)
