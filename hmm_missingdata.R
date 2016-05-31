@@ -58,6 +58,11 @@ HMM.data.missing=function(Y,S,beta_r,na=NA){
 
 #2 MCMC
 mcmc.hmm=function(Y,R,X,b0,B0,c0,C0,E0,Et,S,m,beta0_r=NULL,lambda_y=1,lambda_r=1,rep=1){
+  # accept_y=vector()
+  # accept_r=vector()
+  # count_y=1
+  # count_r=1
+
   #initial value
   d=ncol(X)    #numbers of beta
   p=length(E0) #levels of hidden variable 
@@ -218,8 +223,14 @@ mcmc.hmm=function(Y,R,X,b0,B0,c0,C0,E0,Et,S,m,beta0_r=NULL,lambda_y=1,lambda_r=1
       alpha=min(1,ln_beta_r_ratio(rk,yk,temp,betak_r[k,]))
       #cat("acceptrate_beta:",alpha,"\n")  #to see the accept rate
       U01=runif(1)
-      if(U01<alpha)
+      
+      # accept_r[count_r]=0 #calc accept rate for beta
+      
+      if(U01<alpha){
         betak_r[k,]=temp
+        # accept_r[count_r]=1
+      }
+      # count_r=count_r+1 
     }
     
     #sample missing yi
@@ -231,8 +242,14 @@ mcmc.hmm=function(Y,R,X,b0,B0,c0,C0,E0,Et,S,m,beta0_r=NULL,lambda_y=1,lambda_r=1
           alpha=min(1,ln_yi_ratio(beta=betak[nyt.s,,t],x=X[ny,],sigma=sigmak[nyt.s,t],y1=temp,y0=Y[ny,t]))
           #cat("acceptrate_yi:",alpha,"\n")  #to see the accept rate
           U01=runif(1)
-          if(U01<alpha)
+          
+          # accept_y[count_y]=0 #calc accept rate for y
+          
+          if(U01<alpha){
             Y[ny,t]=temp
+            # accept_y[count_y]=1
+          }
+          # count_y=count_y+1
         }
     
     
@@ -262,8 +279,11 @@ mcmc.hmm=function(Y,R,X,b0,B0,c0,C0,E0,Et,S,m,beta0_r=NULL,lambda_y=1,lambda_r=1
   }
   ParaMeters=list(p.betak=p.betak,p.sigmak=p.sigmak,p.D=p.D,p.Dt=p.Dt,p.betak_r=p.betak_r)
   class(ParaMeters)="hmm.missing"
-  if(rep==1)
+  if(rep==1){
+    # cat("beta accept rate:",sum(accept_r)/length(accept_r),"\n")
+    # cat("Y accept rate:",sum(accept_y)/length(accept_y),"\n")
     return(ParaMeters)
+  }
   else{
     groups=list()
     groups[[1]]=ParaMeters
@@ -271,11 +291,13 @@ mcmc.hmm=function(Y,R,X,b0,B0,c0,C0,E0,Et,S,m,beta0_r=NULL,lambda_y=1,lambda_r=1
       groups[[r]]=mcmc.hmm(Y,R,X,b0,B0,c0,C0,E0,Et,S,m,beta0_r,lambda_y,lambda_r,rep=1)
     class(groups)='hmmgroups.missing'
   }
+  # cat("beta accept rate:",sum(accept_r)/length(accept_r),"\n")
+  # cat("Y accept rate:",sum(accept_y)/length(accept_y),"\n")
   return(groups)
 }
 
 #method to summary hmm.missing class
-summary.hmm.missing=function(data,n){
+summary.hmm.missing=function(data,n,TrueValue=NULL){
   len=dim(data$p.D)[2]
   if(len<n){
     print("error! need more data")
@@ -291,14 +313,26 @@ summary.hmm.missing=function(data,n){
   transfer.matrix.sd=apply(data$p.Dt[,,,(len-n+1):len],c(1,2,3),sd)
   beta_r=apply(data$p.betak_r[,,(len-n+1):len],c(1,2),mean)
   beta_r.sd=apply(data$p.betak_r[,,(len-n+1):len],c(1,2),sd)
-  
-  summary.hmm=list(beta=beta,beta.sd=beta.sd,sigma=sigma,sigma.sd=sigma.sd,
-                   init.distribution=init.distribution,
-                   init.distribution.sd=init.distribution.sd,
-                   transfer.matrix=transfer.matrix,
-                   transfer.matrix.sd=transfer.matrix.sd,
-                   beta_r=beta_r,
-                   beta_r.sd=beta_r.sd)
+  if(is.null(TrueValue))
+    summary.hmm=list(beta=beta,beta.sd=beta.sd,sigma=sigma,sigma.sd=sigma.sd,
+                     init.distribution=init.distribution,
+                     init.distribution.sd=init.distribution.sd,
+                     transfer.matrix=transfer.matrix,
+                     transfer.matrix.sd=transfer.matrix.sd,
+                     beta_r=beta_r,
+                     beta_r.sd=beta_r.sd)
+  else
+    summary.hmm=list(beta.True=TrueValue$beta,beta=beta,beta.sd=beta.sd,
+                     sigama.True=TrueValue$sigma,sigma=sigma,sigma.sd=sigma.sd,
+                     init.distribution.True=TrueValue$init.distribution,
+                     init.distribution=init.distribution,
+                     init.distribution.sd=init.distribution.sd,
+                     transfer.matrix.True=TrueValue$transfer.matrix,
+                     transfer.matrix=transfer.matrix,
+                     transfer.matrix.sd=transfer.matrix.sd,
+                     beta_r.True=TrueValue$beta_r,
+                     beta_r=beta_r,
+                     beta_r.sd=beta_r.sd)
   return(summary.hmm)
 }
 
@@ -371,23 +405,23 @@ summary.hmmgroups.missing=function(data,n,TrueValue=NULL){
 
 
 #test parameter to generate missing data
-sz=1500  #sample size
-X=matrix(c(rep(1,sz),runif(sz,-5,5)),sz,2)
-beta=rbind(c(-2,1),c(2,-1))
+sz=1000  #sample size
+X=matrix(c(rep(1,sz),runif(sz,0,5),rnorm(sz,0,5)),sz)
+beta=rbind(c(-1,0.5,1),c(0,0.5,0.5),c(1,-0.5,-1))
 beta.t=rep(beta,3)
-dim(beta.t)=c(2,2,3)
-sigma=c(0.3,0.3)
+dim(beta.t)=c(3,3,3)
+sigma=c(0.3,0.25,0.3)
 sigma.t=rep(sigma,3)
-dim(sigma.t)=c(2,3)
-Prob=c(0.4,0.6)
-Prob.t=c(0.8,0.2,0.2,0.8,0.8,0.2,0.2,0.8)
-dim(Prob.t)=c(2,2,2)
+dim(sigma.t)=c(3,3)
+Prob=c(0.3,0.3,0.4)
+Prob.t=rep(c(0.8,0.1,0.05,0.15,0.8,0.15,0.05,0.1,0.8),2)
+dim(Prob.t)=c(3,3,2)
 
 temp=HMM.data(X,Prob,Prob.t,beta.t,sigma.t,T)
 Y=temp$Y
 S=temp$S
 TV=temp$TrueValue
-beta_r=array(c(3,3,-0.5,-0.5),dim=c(2,2))
+beta_r=array(c(2,2.5,3,-0.5,-0.5,-1),dim=c(3,2))
 TV$beta_r=beta_r
 temp.missing=HMM.data.missing(Y,S,beta_r)
 Y.missing=temp.missing$Y.missing
@@ -395,14 +429,14 @@ R=temp.missing$R
 table(R)
 
 b0=solve(t(X)%*%X)%*%t(X)%*%Y[,1]
-B0=1.5*diag(2)
+B0=1.5*diag(3)
 c0=1.28
 C0=0.36*var(as.vector(Y))
-E0=c(1,1)
+E0=c(1,1,1)
 Et=Prob.t*2
-m=10000
-system.time(g1<-mcmc.hmm(Y,R,X,b0,B0,c0,C0,E0,Et,S,m=5000,beta_r,lambda_r = 8,lambda_y = 5,rep=20))
+m=4000
+system.time(g1<-mcmc.hmm(Y,R,X,b0,B0,c0,C0,E0,Et,S,m,beta_r,lambda_r = 8,lambda_y = 8,rep=1))
 summary(g1,m/2,TV)
-beta_r0=array(rep(c(log(length(R)/sum(R==0)-1),0),each=dim(beta_r)[1]),dim=dim(beta_r))
-system.time(g2<-mcmc.hmm(Y.missing,R,X,b0,B0,c0,C0,E0,Et,S,m=10000,beta_r0,lambda_r = 8,lambda_y = 5,rep=10))
-summary(g2,m/2,TV)
+# beta_r0=array(rep(c(log(length(R)/sum(R==0)-1),0),each=dim(beta_r)[1]),dim=dim(beta_r))
+# system.time(g2<-mcmc.hmm(Y.missing,R,X,b0,B0,c0,C0,E0,Et,S,m=10000,beta_r0,lambda_r = 8,lambda_y = 5,rep=10))
+# summary(g2,m/2,TV)
