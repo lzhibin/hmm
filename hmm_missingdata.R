@@ -1,67 +1,37 @@
-######################################################
-#0 load package
+####################################################################################################
+#load package
 library(MASS)   #multiple random normal   
 library(gtools) #dirichlet distribution
 library(actuar) #rinvgamma random variable
 
-#1 generate data
-HMM.data=function(X,pi.0,pi.t,Beta.t,Sigma.t,information=T){
-  n=nrow(X)
-  k=length(pi.0)
-  Y=matrix(NA,n,dim(pi.t)[3]+1)
-  S=sample.int(k,n,replace = T,prob = pi.0)
-  Y[,1]=sapply(1:n,function(x)rnorm(1,mean=sum(X[x,]*Beta.t[S[x],,1]),sd=sqrt(Sigma.t[S[x],1])))
-  #Y[,1]=rnorm(n,mean=sum(X%*%Beta.t[S,,1]),sd=sqrt(Sigma.t[S,1]))  #faster
-  S.old=S
-  for(i in 1:dim(pi.t)[3]){
-    S.temp=vector()
-    for(j in 1:k){
-      S.temp[S.old==j]=sample.int(k,sum(S.old==j),replace = T,prob = pi.t[j,,i])
-    }
-    S=cbind(S,S.temp)
-    Y[,i+1]=sapply(1:n,function(x)rnorm(1,mean=sum(X[x,]*Beta.t[S.temp[x],,i+1]),sd=sqrt(Sigma.t[S.temp[x],i+1])))
-    #Y[,i+1]=rnorm(n,mean=sum(X%*%Beta.t[S.temp,,i+1]),sd=sqrt(Sigma.t[S.temp,i+1]))   #faster
-    S.old=S.temp
-  }
-  if(information){
-    True.Value=list()  #True Value
-    True.Value$beta=beta.t
-    True.Value$sigma=sigma.t
-    True.Value$init.distribution=Prob
-    True.Value$transfer.matrix=Prob.t
-    
-    return(list(Y=Y,S=S,TrueValue=True.Value))
-  }
-  else
-    return(Y)
-}
 
-HMM.data.missing=function(Y,S,beta_r,na=NA){
-  nr=dim(Y)[1]
-  nc=dim(Y)[2]
-  Y.missing=Y
-  R=array(dim=dim(Y))
-  for(i in 1:nr)
-    for(j in 1:nc){
-      s=S[i,j]
-      part=exp(beta_r[s,1]+beta_r[s,2]*Y[i,j])
-      p0=1/(1+part)
-      p1=1-p0
-      R[i,j]=sample(c(0,1),1,prob=c(p0,p1))
-      if(R[i,j]==0)
-        Y.missing[i,j]=na
-      #r=0 missing
-    }
-  return(list(Y.missing=Y.missing,R=R))
-}
+####################################################################################################
+###########################             MCMC function                 ##############################
+####################################################################################################
 
-
-#2 MCMC
 mcmc.hmm=function(Y,R,X,b0,B0,c0,C0,E0,Et,S,m,beta0_r=NULL,lambda_y=1,lambda_r=1,rep=1){
-  # accept_y=vector()
-  # accept_r=vector()
-  # count_y=1
-  # count_r=1
+  ################################################################################################
+  #################       variables explanation
+  ###    1   Y is the HMM data containing nonignorable missing data
+  ###    2   R is the variable indicating observed and missing data 
+  ###           and 0 for missing , 1 for observed 
+  ###    3   X is the covariate , observed
+  ###    4   b0 and B0 is the prior parameters for beta of HMM (betak in this function)
+  ###    5   c0 and C0 is the prior parameters for sigma of HMM
+  ###    6   E0 and Et is the prior parameter for initial probability and transfer probability
+  ###    7   S is the initial component values
+  ###    8   m is the number of iteration
+  ###    9   beta0_r is the initial value for beta of HMM (betak_r in this function)
+  ###    10  lambda_y and lambda_r is to control the scale of information matrix
+  ###           so as to control the accept rate , for missing y and beta of logistic
+  ###    11  rep is the number of repetition
+  ###          rep=1 return hmm.missing class and rep>1 return hmmgroups.missing class
+  
+  ################################################################################################ 
+  #################       variable and function statement
+  #init variable to calculate accept rate
+  accept_y=0
+  accept_r=0
 
   #initial value
   d=ncol(X)    #numbers of beta
@@ -99,6 +69,13 @@ mcmc.hmm=function(Y,R,X,b0,B0,c0,C0,E0,Et,S,m,beta0_r=NULL,lambda_y=1,lambda_r=1
     betak[,,t]=temp.beta
     sigmak[,t]=temp.sigma
   }
+
+  #init missing Y base on average of other periods
+  for(t in 1:Ti)
+    for(ny in 1:NY){
+      if(is.na(Y[ny,t]))
+        Y[ny,t]=mean(Y[ny,],na.rm = T)
+    }
   
   #init missing Y base on prior distribution
   for(t in 1:Ti)
@@ -115,9 +92,9 @@ mcmc.hmm=function(Y,R,X,b0,B0,c0,C0,E0,Et,S,m,beta0_r=NULL,lambda_y=1,lambda_r=1
     return(res)
   }
   
-  #likelihood ratio for beta_r_new / beta_r_old
+  #likelihood ratio for beta_r_new / beta_r_old (beta of logistic)
   ln_beta_r_ratio=function(r,y,beta1,beta0){
-    #beta1 and beta0 are the new value and old value of beta_r
+    #beta1 and beta0 are the new value and old value of beta_r (beta of logistic)
     temp1=sum(r)*(beta1[1]-beta0[1])+sum(r*y)*(beta1[2]-beta0[2])
     temp2=sum(log(1+exp(beta0[1]+beta0[2]*y)))-sum(log(1+exp(beta1[1]+beta1[2]*y)))
     temp=exp(temp1+temp2)
@@ -149,26 +126,36 @@ mcmc.hmm=function(Y,R,X,b0,B0,c0,C0,E0,Et,S,m,beta0_r=NULL,lambda_y=1,lambda_r=1
   }
   
   #likelihood ratio for yi_new / yi_old
-  ln_yi_ratio=function(beta,x,sigma,y1,y0){
-    #the beta here is betak[k,,t];sigma is sigmak[k,t] y1 and y0 is the new value and old value
-    temp1=((y0-sum(x*beta))^2-(y1-sum(x*beta))^2)/(2*sigma) #+beta[2]*r*(y1-y0)=0 for r=0
-    temp2=log(1+exp(beta[1]+beta[2]*y0))-log(1+exp(beta[1]+beta[2]*y1))
+  ln_yi_ratio=function(betak,betak_r,x,sigma,y1,y0){
+    #the beta here is betak[k,,t] (beta of HMM number k component , number t periods)
+    #sigma is sigmak[k,t] (beta of HMM number k component , number t periods)
+    #y1 and y0 is the new value and old value of yi
+    temp1=((y0-sum(x*betak))^2-(y1-sum(x*betak))^2)/(2*sigma) #+beta[2]*r*(y1-y0)=0 for r=0
+    temp2=log(1+exp(betak_r[1]+betak_r[2]*y0))-log(1+exp(betak_r[1]+betak_r[2]*y1))
     temp=exp(temp1+temp2)
-    return(temp)
     #take exp to diff of log likelihood
+    return(temp)
   }
   
   #information matrix estimator for yi ;return inverse ;in this sample it is number
   im_yi=function(beta,sigma,y=0){
-    d1=(beta[2]^2)
-    d2=exp(beta[1]+beta[2]*y)
-    temp=(d1*d2)/((1+d2)^2)+1/sigma
+    temp1=(beta[2]^2)
+    temp2=exp(beta[1]+beta[2]*y)
+    temp=(temp1*temp2)/((1+temp2)^2)+1/sigma
     return(1/temp)
   }
   
-  
-  #main iteration
+  ################################################################################################ 
+  #################       main iteration
   for(i in 1:m){
+    if(i %% 50 ==1){    
+      cat("numbers of uncorrected S for missing y:",sum((S-get('S',.GlobalEnv))[R==0] != 0),"\n") #for debug
+      print(table(S[R==0],get('S',.GlobalEnv)[R==0]))
+      cat("numbers of uncorrected S for observed y:",sum((S-get('S',.GlobalEnv))[R==1] != 0),"\n") #for debug
+      print(table(S[R==1],get('S',.GlobalEnv)[R==1]))
+      cat("average of absolute distance for missing y:",sum(abs(Y-get("Y",.GlobalEnv)))/sum(R==0),"\n") #for debug
+    }
+    
     for(t in 1:Ti){
       NS[,t]=sapply(1:p,function(x)sum(S[,t]==x))
     }
@@ -219,39 +206,39 @@ mcmc.hmm=function(Y,R,X,b0,B0,c0,C0,E0,Et,S,m,beta0_r=NULL,lambda_y=1,lambda_r=1
     for(k in 1:p){
       yk=Y[S==k]
       rk=R[S==k]
-      temp=mvrnorm(1,betak_r[k,],lambda_r*im_beta_r(yk))  #lambda_r to control accept rate
+      if(i %% 50 ==1){
+        print("beta_r information matrix:")
+        print(lambda_r*im_beta_r(yk,betak_r[k,]))
+      }
+      #temp=mvrnorm(1,betak_r[k,],lambda_r*im_beta_r(yk,betak_r[k,]))
+      temp=mvrnorm(1,betak_r[k,],lambda_r*im_beta_r(yk))  #lambda_r to control accept rate,using betak_r[k,]=0
+      #temp=mvrnorm(1,betak_r[k,],diag(c(1,0.5))) #fix the normal variance
       alpha=min(1,ln_beta_r_ratio(rk,yk,temp,betak_r[k,]))
-      #cat("acceptrate_beta:",alpha,"\n")  #to see the accept rate
       U01=runif(1)
-      
-      # accept_r[count_r]=0 #calc accept rate for beta
-      
       if(U01<alpha){
         betak_r[k,]=temp
-        # accept_r[count_r]=1
+        accept_r=accept_r+1
       }
-      # count_r=count_r+1 
+        
     }
+    
+    old_Y=Y #for calc accept rate of missing y
     
     #sample missing yi
     for(ny in 1:NY)
       for(t in 1:Ti)
         if(R[ny,t]==0){
           nyt.s=S[ny,t]
-          temp=rnorm(1,Y[ny,t],sqrt(lambda_y*im_yi(betak_r[nyt.s,],sigmak[nyt.s,t])))
-          alpha=min(1,ln_yi_ratio(beta=betak[nyt.s,,t],x=X[ny,],sigma=sigmak[nyt.s,t],y1=temp,y0=Y[ny,t]))
-          #cat("acceptrate_yi:",alpha,"\n")  #to see the accept rate
+          #print(sqrt(lambda_y*im_yi(betak_r[nyt.s,],sigmak[nyt.s,t],Y[ny,t])))  #temperary
+          #temp=rnorm(1,Y[ny,t],sqrt(lambda_y*im_yi(betak_r[nyt.s,],sigmak[nyt.s,t],Y[ny,t])))
+          temp=rnorm(1,Y[ny,t],sqrt(lambda_y*im_yi(betak_r[nyt.s,],sigmak[nyt.s,t])))  #using y=0
+          #temp=rnorm(1,sum(X[ny,]*betak[nyt.s,,t]),sqrt(lambda_y*im_yi(betak_r[nyt.s,],sigmak[nyt.s,t])))
+          alpha=min(1,ln_yi_ratio(betak=betak[nyt.s,,t],betak_r=betak_r[nyt.s,],x=X[ny,],sigma=sigmak[nyt.s,t],y1=temp,y0=Y[ny,t]))
           U01=runif(1)
-          
-          # accept_y[count_y]=0 #calc accept rate for y
-          
-          if(U01<alpha){
+          if(U01<alpha)
             Y[ny,t]=temp
-            # accept_y[count_y]=1
-          }
-          # count_y=count_y+1
         }
-    
+    accept_y=accept_y+sum(Y-old_Y != 0)#for calc accept rate of missing y
     
     #label switch
     base=betak[,1,]
@@ -266,22 +253,27 @@ mcmc.hmm=function(Y,R,X,b0,B0,c0,C0,E0,Et,S,m,beta0_r=NULL,lambda_y=1,lambda_r=1
     
     for(t in 1:(Ti-1)){
       #switch Dt
+      
       Dt[,,t]=Dt[order(base[,t]),order(base[,t+1]),t]
       
     }
     
-    #store parameters
+    #save parameters
     p.betak[,,,i]=betak
     p.sigmak[,,i]=sigmak
     p.D[,i]=D
     p.Dt[,,,i]=Dt
     p.betak_r[,,i]=betak_r
   }
+  ################################################################################################ 
+  #################       output data and make repetition
   ParaMeters=list(p.betak=p.betak,p.sigmak=p.sigmak,p.D=p.D,p.Dt=p.Dt,p.betak_r=p.betak_r)
   class(ParaMeters)="hmm.missing"
+  count_y=sum(R==0)*Ti*m ##for calc accept rate of missing r,total number of samples
+  count_r=p*m  ##for calc accept rate of missing r,total number of samples
+  cat("beta accept rate:",accept_r/count_r,"\n")
+  cat("Y accept rate:",accept_y/count_y,"\n")
   if(rep==1){
-    # cat("beta accept rate:",sum(accept_r)/length(accept_r),"\n")
-    # cat("Y accept rate:",sum(accept_y)/length(accept_y),"\n")
     return(ParaMeters)
   }
   else{
@@ -291,16 +283,72 @@ mcmc.hmm=function(Y,R,X,b0,B0,c0,C0,E0,Et,S,m,beta0_r=NULL,lambda_y=1,lambda_r=1
       groups[[r]]=mcmc.hmm(Y,R,X,b0,B0,c0,C0,E0,Et,S,m,beta0_r,lambda_y,lambda_r,rep=1)
     class(groups)='hmmgroups.missing'
   }
-  # cat("beta accept rate:",sum(accept_r)/length(accept_r),"\n")
-  # cat("Y accept rate:",sum(accept_y)/length(accept_y),"\n")
   return(groups)
 }
 
-#method to summary hmm.missing class
+
+####################################################################################################
+###########################          auxiliary function               ##############################
+####################################################################################################
+
+####generate HMM data
+HMM.data=function(X,pi.0,pi.t,Beta.t,Sigma.t,information=T){
+  n=nrow(X)
+  k=length(pi.0)
+  Y=matrix(NA,n,dim(pi.t)[3]+1)
+  S=sample.int(k,n,replace = T,prob = pi.0)
+  Y[,1]=sapply(1:n,function(x)rnorm(1,mean=sum(X[x,]*Beta.t[S[x],,1]),sd=sqrt(Sigma.t[S[x],1])))
+  #Y[,1]=rnorm(n,mean=sum(X%*%Beta.t[S,,1]),sd=sqrt(Sigma.t[S,1]))  #faster
+  S.old=S
+  for(i in 1:dim(pi.t)[3]){
+    S.temp=vector()
+    for(j in 1:k){
+      S.temp[S.old==j]=sample.int(k,sum(S.old==j),replace = T,prob = pi.t[j,,i])
+    }
+    S=cbind(S,S.temp)
+    Y[,i+1]=sapply(1:n,function(x)rnorm(1,mean=sum(X[x,]*Beta.t[S.temp[x],,i+1]),sd=sqrt(Sigma.t[S.temp[x],i+1])))
+    #Y[,i+1]=rnorm(n,mean=sum(X%*%Beta.t[S.temp,,i+1]),sd=sqrt(Sigma.t[S.temp,i+1]))   #faster
+    S.old=S.temp
+  }
+  if(information){
+    True.Value=list()  #True Value
+    True.Value$beta=beta.t
+    True.Value$sigma=sigma.t
+    True.Value$init.distribution=Prob
+    True.Value$transfer.matrix=Prob.t
+    
+    return(list(Y=Y,S=S,TrueValue=True.Value))
+  }
+  else
+    return(Y)
+}
+
+####input HMM data and drop some data with beta_r
+HMM.data.missing=function(Y,S,beta_r,na=NA){
+  nr=dim(Y)[1]
+  nc=dim(Y)[2]
+  Y.missing=Y
+  R=array(dim=dim(Y))
+  for(i in 1:nr)
+    for(j in 1:nc){
+      s=S[i,j]
+      part=exp(beta_r[s,1]+beta_r[s,2]*Y[i,j])
+      p0=1/(1+part)
+      p1=1-p0
+      R[i,j]=sample(c(0,1),1,prob=c(p0,p1))
+      if(R[i,j]==0)
+        Y.missing[i,j]=na
+      #r=0 missing
+    }
+  return(list(Y.missing=Y.missing,R=R))
+}
+
+####method to summary hmm.missing class
 summary.hmm.missing=function(data,n,TrueValue=NULL){
   len=dim(data$p.D)[2]
   if(len<n){
     print("error! need more data")
+    return(0)
   }
   
   beta=apply(data$p.betak[,,,(len-n+1):len],c(1,2,3),mean)
@@ -336,6 +384,7 @@ summary.hmm.missing=function(data,n,TrueValue=NULL){
   return(summary.hmm)
 }
 
+####method to summary hmmgroups.missing class (when repetiton)
 summary.hmmgroups.missing=function(data,n,TrueValue=NULL){
   r=length(data)
   Sample=summary(data[[1]],n)
@@ -403,40 +452,80 @@ summary.hmmgroups.missing=function(data,n,TrueValue=NULL){
   return(res)
 }
 
+####function to plot beta_r
+plot.hmm.missing=function(data,...){
+  data=data$p.betak_r
+  c=par(mfrow=c(dim(data)[1:2]))
+  apply(data,1:2,plot,...)
+  par(c)
+}
 
-#test parameter to generate missing data
+
+####################################################################################################
+#############################             set parameters             ###############################
+####################################################################################################
+
+####test parameter to generate missing data
 sz=1000  #sample size
 X=matrix(c(rep(1,sz),runif(sz,0,5),rnorm(sz,0,5)),sz)
-beta=rbind(c(-1,0.5,1),c(0,0.5,0.5),c(1,-0.5,-1))
+
+beta=rbind(c(-2,0.5,1),c(0,0,0),c(2,-0.5,-1))
 beta.t=rep(beta,3)
-dim(beta.t)=c(3,3,3)
-sigma=c(0.3,0.25,0.3)
+dim(beta.t)=c(3,3,3)    #setting beta for HMM with 3 component 3 dimension 3 periods   
+
+sigma=c(0.2,0.15,0.175)
 sigma.t=rep(sigma,3)
-dim(sigma.t)=c(3,3)
-Prob=c(0.3,0.3,0.4)
-Prob.t=rep(c(0.8,0.1,0.05,0.15,0.8,0.15,0.05,0.1,0.8),2)
-dim(Prob.t)=c(3,3,2)
+dim(sigma.t)=c(3,3)    #setting sigma for HMM with 3 component 3 periods
 
-temp=HMM.data(X,Prob,Prob.t,beta.t,sigma.t,T)
-Y=temp$Y
-S=temp$S
+Prob=c(0.3,0.3,0.4)    #setting init probability for HMM
+Prob.t=rep(c(0.6,0.25,0.15,0.2,0.6,0.2,0.15,0.25,0.6),2)
+dim(Prob.t)=c(3,3,2)   #setting transfer probability for HMM
+
+beta_r=array(c(3,3.5,4,-0.5,-0.5,-1),dim=c(3,2)) #setting beta_r for logit functiuon
+
+####generate HMM and data and drop some data with beta_r
+temp=HMM.data(X,Prob,Prob.t,beta.t,sigma.t,T) 
+Y=temp$Y   #HMM data observed data Y
+S=temp$S   #HMM data component parameter S
+
+S_r=sample.int(length(Prob),nrow(Y)*ncol(Y),replace = T)
+dim(S_r)=dim(S) #generate random component parameter S_r
+
 TV=temp$TrueValue
-beta_r=array(c(2,2.5,3,-0.5,-0.5,-1),dim=c(3,2))
-TV$beta_r=beta_r
-temp.missing=HMM.data.missing(Y,S,beta_r)
-Y.missing=temp.missing$Y.missing
-R=temp.missing$R
-table(R)
+TV$beta_r=beta_r #save all True values
 
+temp.missing=HMM.data.missing(Y,S,beta_r) #drop some data with beta_r
+Y.missing=temp.missing$Y.missing          #HMM data with nonignorable missing Y.missing
+
+R=temp.missing$R  #variable R indicating observed data and missing data , 0 for missing and 1 for observed
+table(R)          #show the partition of missing and observed data
+
+####setting priori parameters
 b0=solve(t(X)%*%X)%*%t(X)%*%Y[,1]
 B0=1.5*diag(3)
 c0=1.28
 C0=0.36*var(as.vector(Y))
 E0=c(1,1,1)
 Et=Prob.t*2
-m=4000
-system.time(g1<-mcmc.hmm(Y,R,X,b0,B0,c0,C0,E0,Et,S,m,beta_r,lambda_r = 8,lambda_y = 8,rep=1))
+beta_r0=array(rep(c(log(length(R)/sum(R==0)-1),0),each=dim(beta_r)[1]),dim=dim(beta_r))
+beta_r1=mvrnorm(dim(beta_r)[1],c(2,-1),diag(rep(0.3,2)))
+m=1000
+
+
+####################################################################################################
+#############################               simulation               ###############################
+####################################################################################################
+
+####mcmc.hmm=function(Y,R,X,b0,B0,c0,C0,E0,Et,S,m,beta0_r=NULL,lambda_y=1,lambda_r=1,rep=1)
+
+####test1 True value as init value
+Sys.time()
+system.time(g1<-mcmc.hmm(Y,R,X,b0,B0,c0,C0,E0,Et,S,m,beta_r,lambda_r = 2,lambda_y = 1,rep=1))
 summary(g1,m/2,TV)
-# beta_r0=array(rep(c(log(length(R)/sum(R==0)-1),0),each=dim(beta_r)[1]),dim=dim(beta_r))
-# system.time(g2<-mcmc.hmm(Y.missing,R,X,b0,B0,c0,C0,E0,Et,S,m=10000,beta_r0,lambda_r = 8,lambda_y = 5,rep=10))
-# summary(g2,m/2,TV)
+plot(g1,type='l')
+####test2 random value as init value
+Sys.time()
+system.time(g2<-mcmc.hmm(Y.missing,R,X,b0,B0,c0,C0,E0,Et,S_r,m,beta_r0,lambda_r = 3,lambda_y = 0.5,rep=1))
+summary(g2,m/2,TV)
+plot(g2)
+Sys.time()
