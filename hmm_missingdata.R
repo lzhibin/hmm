@@ -84,11 +84,53 @@ mcmc.hmm=function(Y,R,X,b0,B0,c0,C0,E0,Et,S,m,beta0_r=NULL,lambda_y=1,lambda_r=1
         Y[ny,t]=rnorm(1,sum(X[ny,]*betak[S[ny,t],,t]))
     }
   
-  #density function for FFBS to renew S
-  f.density=function(y,x,beta,sigma){
+  # #density function for FFBS to renew S
+  # f.density=function(y,x,beta,sigma){
+  #   m=as.vector(beta%*%x)
+  #   s=sqrt(sigma)
+  #   res=dnorm(y,m,s)
+  #   return(res)
+  # }
+  
+  #forward function
+  forward_t=function(t,x,y,r,by,s,br,p0,pt){
+    temp1=dnorm(y[t],as.vector(by[,,t]%*%x),sqrt(s[,t]))
+    temp2=exp(as.vector(br%*%c(1,y[t])))^r[t]/(1+exp(as.vector(br%*%c(1,y[t]))))
+    temp=temp1*temp2
+    if(t==1){
+      res=as.vector(p0*temp)
+    }
+    else{
+      q=forward_t(t-1,x,y,r,by,s,br,p0,pt)
+      res=as.vector(t(q)%*%pt[,,t-1])*temp
+    }
+    return(res)
+  }
+  
+  #backward function
+  backward_t=function(t,x,y,r,by,s,br,p0,pt){
+    if(t==Ti){
+      res=rep(1,p)
+    }
+    else{
+      temp1=dnorm(y[t+1],as.vector(by[,,t+1]%*%x),sqrt(s[,t+1]))
+      temp2=exp(as.vector(br%*%c(1,y[t+1])))^r[t+1]/(1+exp(as.vector(br%*%c(1,y[t+1]))))
+      temp=temp1*temp2
+      qbar=backward_t(t+1,x,y,r,by,s,br,p0,pt)
+      res=as.vector(pt[,,t]%*%(qbar*temp))
+    }
+    return(res)
+  }
+  
+  #density function for FFBS to renew S with missing data
+  f.density=function(y,x,beta,sigma,r,betar){
     m=as.vector(beta%*%x)
     s=sqrt(sigma)
-    res=dnorm(y,m,s)
+    res1=dnorm(y,m,s)
+    p0=1/(1+exp(as.vector(betar%*%c(1,y))))
+    p1=1-p0
+    res2=(p0^(1-r))*(p1^r)
+    res=res1*res2
     return(res)
   }
   
@@ -186,23 +228,48 @@ mcmc.hmm=function(Y,R,X,b0,B0,c0,C0,E0,Et,S,m,beta0_r=NULL,lambda_y=1,lambda_r=1
     }
     
     
-    #FFBS renew hidden variable altnative code
-    P.S.Update=array(dim=c(Ti,p,NY))
+    # #FFBS renew hidden variable altnative code
+    # P.S.Update=array(dim=c(Ti,p,NY))
+    # for(nr in 1:NY){
+    #   P.S.Update[1,,nr]=D*f.density(Y[nr,1],X[nr,],betak[,,1],sigmak[,1])
+    #   for(t in 2:Ti){
+    #     P.S.Update[t,,nr]=t(P.S.Update[t-1,,nr])%*%Dt[,,t-1]*f.density(Y[nr,t],X[nr,],betak[,,t],sigmak[,t])
+    #   }
+    # }
+    # for(nr in 1:NY){
+    #   S[nr,Ti]=sample.int(p,1,prob = P.S.Update[Ti,,nr])
+    #   for(t in (Ti-1):1){
+    #     s.temp=P.S.Update[t,,nr]*Dt[,S[nr,t+1],t]
+    #     S[nr,t]=sample.int(p,1,prob = s.temp)
+    #   }
+    # }
+    
+    #FFBS renew hidden variable with missing data
+    # P.S.Update=array(dim=c(Ti,p,NY))
+    # for(nr in 1:NY){
+    #   P.S.Update[1,,nr]=D*f.density(Y[nr,1],X[nr,],betak[,,1],sigmak[,1],R[ny,1],betak_r)
+    #   for(t in 2:Ti){
+    #     P.S.Update[t,,nr]=t(P.S.Update[t-1,,nr])%*%Dt[,,t-1]*f.density(Y[nr,t],X[nr,],betak[,,t],sigmak[,t],R[ny,t],betak_r)
+    #   }
+    # }
+    # for(nr in 1:NY){
+    #   S[nr,Ti]=sample.int(p,1,prob = P.S.Update[Ti,,nr])
+    #   for(t in (Ti-1):1){
+    #     s.temp=P.S.Update[t,,nr]*Dt[,S[nr,t+1],t]
+    #     S[nr,t]=sample.int(p,1,prob = s.temp)
+    #   }
+    # }
+    # 
+    #sample beta_r 
+    
+    #forward backward to calculate full condition of S
     for(nr in 1:NY){
-      P.S.Update[1,,nr]=D*f.density(Y[nr,1],X[nr,],betak[,,1],sigmak[,1])
-      for(t in 2:Ti){
-        P.S.Update[t,,nr]=t(P.S.Update[t-1,,nr])%*%Dt[,,t-1]*f.density(Y[nr,t],X[nr,],betak[,,t],sigmak[,t])
-      }
-    }
-    for(nr in 1:NY){
-      S[nr,Ti]=sample.int(p,1,prob = P.S.Update[Ti,,nr])
-      for(t in (Ti-1):1){
-        s.temp=P.S.Update[t,,nr]*Dt[,S[nr,t+1],t]
-        S[nr,t]=sample.int(p,1,prob = s.temp)
+      for(nc in 1:Ti){
+        Psit=forward_t(nc,X[nr,],Y[nr,],R[nr,],betak,sigmak,betak_r,D,Dt)*backward_t(nc,X[nr,],Y[nr,],R[nr,],betak,sigmak,betak_r,D,Dt)
+        S[nr,nc]=sample.int(p,1,prob=Psit)
       }
     }
     
-    #sample beta_r 
     for(k in 1:p){
       yk=Y[S==k]
       rk=R[S==k]
@@ -469,7 +536,7 @@ plot.hmm.missing=function(data,...){
 sz=1000  #sample size
 X=matrix(c(rep(1,sz),runif(sz,0,5),rnorm(sz,0,5)),sz)
 
-beta=rbind(c(-2,0.5,1),c(0,0,0),c(2,-0.5,-1))
+beta=rbind(c(-2,0.5,1),c(0,0.5,-0.5),c(2,-0.5,-1))
 beta.t=rep(beta,3)
 dim(beta.t)=c(3,3,3)    #setting beta for HMM with 3 component 3 dimension 3 periods   
 
@@ -481,7 +548,7 @@ Prob=c(0.3,0.3,0.4)    #setting init probability for HMM
 Prob.t=rep(c(0.6,0.25,0.15,0.2,0.6,0.2,0.15,0.25,0.6),2)
 dim(Prob.t)=c(3,3,2)   #setting transfer probability for HMM
 
-beta_r=array(c(3,3.5,4,-0.5,-0.5,-1),dim=c(3,2)) #setting beta_r for logit functiuon
+beta_r=array(c(2,2.5,3,-0.5,-0.5,-1),dim=c(3,2)) #setting beta_r for logit functiuon
 
 ####generate HMM and data and drop some data with beta_r
 temp=HMM.data(X,Prob,Prob.t,beta.t,sigma.t,T) 
@@ -509,7 +576,7 @@ E0=c(1,1,1)
 Et=Prob.t*2
 beta_r0=array(rep(c(log(length(R)/sum(R==0)-1),0),each=dim(beta_r)[1]),dim=dim(beta_r))
 beta_r1=mvrnorm(dim(beta_r)[1],c(2,-1),diag(rep(0.3,2)))
-m=1000
+m=2000
 
 
 ####################################################################################################
