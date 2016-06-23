@@ -69,6 +69,10 @@ mcmc.hmm=function(Y,R,X,b0,B0,c0,C0,E0,Et,S,m,beta0_r=NULL,lambda_y=1,lambda_r=1
     betak[,,t]=temp.beta
     sigmak[,t]=temp.sigma
   }
+  
+  # #code for test
+  # betak=beta.t
+  # sigmak=sigma.t
 
   #init missing Y base on average of other periods
   for(t in 1:Ti)
@@ -95,7 +99,7 @@ mcmc.hmm=function(Y,R,X,b0,B0,c0,C0,E0,Et,S,m,beta0_r=NULL,lambda_y=1,lambda_r=1
   #forward function
   forward_t=function(t,x,y,r,by,s,br,p0,pt){
     temp1=dnorm(y[t],as.vector(by[,,t]%*%x),sqrt(s[,t]))
-    temp2=exp(as.vector(br%*%c(1,y[t])))^r[t]/(1+exp(as.vector(br%*%c(1,y[t]))))
+    temp2=(exp(as.vector(br%*%c(1,y[t]))))^r[t]/(1+exp(as.vector(br%*%c(1,y[t]))))
     temp=temp1*temp2
     if(t==1){
       res=as.vector(p0*temp)
@@ -114,7 +118,7 @@ mcmc.hmm=function(Y,R,X,b0,B0,c0,C0,E0,Et,S,m,beta0_r=NULL,lambda_y=1,lambda_r=1
     }
     else{
       temp1=dnorm(y[t+1],as.vector(by[,,t+1]%*%x),sqrt(s[,t+1]))
-      temp2=exp(as.vector(br%*%c(1,y[t+1])))^r[t+1]/(1+exp(as.vector(br%*%c(1,y[t+1]))))
+      temp2=(exp(as.vector(br%*%c(1,y[t+1]))))^r[t+1]/(1+exp(as.vector(br%*%c(1,y[t+1]))))
       temp=temp1*temp2
       qbar=backward_t(t+1,x,y,r,by,s,br,p0,pt)
       res=as.vector(pt[,,t]%*%(qbar*temp))
@@ -270,6 +274,17 @@ mcmc.hmm=function(Y,R,X,b0,B0,c0,C0,E0,Et,S,m,beta0_r=NULL,lambda_y=1,lambda_r=1
       }
     }
     
+    # #backward to calculate full condition of S ,for test
+    # for(nr in 1:NY){
+    #   nc=Ti
+    #   Psit=forward_t(nc,X[nr,],Y[nr,],R[nr,],betak,sigmak,betak_r,D,Dt)
+    #   S[nr,nc]=sample.int(p,1,prob=Psit)
+    #   for(nc in (Ti-1):1){
+    #     Psit=forward_t(nc,X[nr,],Y[nr,],R[nr,],betak,sigmak,betak_r,D,Dt)*Dt[,S[nr,nc],nc]
+    #     S[nr,nc]=sample.int(p,1,prob=Psit)
+    #   }
+    # }
+
     for(k in 1:p){
       yk=Y[S==k]
       rk=R[S==k]
@@ -286,9 +301,8 @@ mcmc.hmm=function(Y,R,X,b0,B0,c0,C0,E0,Et,S,m,beta0_r=NULL,lambda_y=1,lambda_r=1
         betak_r[k,]=temp
         accept_r=accept_r+1
       }
-        
     }
-    
+
     old_Y=Y #for calc accept rate of missing y
     
     #sample missing yi
@@ -536,11 +550,11 @@ plot.hmm.missing=function(data,...){
 sz=1000  #sample size
 X=matrix(c(rep(1,sz),runif(sz,0,5),rnorm(sz,0,5)),sz)
 
-beta=rbind(c(-2,0.5,1),c(0,0.5,-0.5),c(2,-0.5,-1))
+beta=rbind(c(-2,0.5,1),c(-0.5,0.5,-0.5),c(2,-0.5,-1))
 beta.t=rep(beta,3)
 dim(beta.t)=c(3,3,3)    #setting beta for HMM with 3 component 3 dimension 3 periods   
 
-sigma=c(0.2,0.15,0.175)
+sigma=c(0.3,0.4,0.5)
 sigma.t=rep(sigma,3)
 dim(sigma.t)=c(3,3)    #setting sigma for HMM with 3 component 3 periods
 
@@ -548,7 +562,8 @@ Prob=c(0.3,0.3,0.4)    #setting init probability for HMM
 Prob.t=rep(c(0.6,0.25,0.15,0.2,0.6,0.2,0.15,0.25,0.6),2)
 dim(Prob.t)=c(3,3,2)   #setting transfer probability for HMM
 
-beta_r=array(c(2,2.5,3,-0.5,-0.5,-1),dim=c(3,2)) #setting beta_r for logit functiuon
+#beta_r=array(c(2,2.5,3,-0.5,-0.5,-1),dim=c(3,2)) #setting beta_r for logit functiuon
+beta_r=array(c(3,3,3,-1,-1,-1),dim=c(3,2)) #setting beta_r for logit functiuon
 
 ####generate HMM and data and drop some data with beta_r
 temp=HMM.data(X,Prob,Prob.t,beta.t,sigma.t,T) 
@@ -586,13 +601,13 @@ m=2000
 ####mcmc.hmm=function(Y,R,X,b0,B0,c0,C0,E0,Et,S,m,beta0_r=NULL,lambda_y=1,lambda_r=1,rep=1)
 
 ####test1 True value as init value
-Sys.time()
-system.time(g1<-mcmc.hmm(Y,R,X,b0,B0,c0,C0,E0,Et,S,m,beta_r,lambda_r = 2,lambda_y = 1,rep=1))
-summary(g1,m/2,TV)
-plot(g1,type='l')
+# Sys.time()
+# system.time(g1<-mcmc.hmm(Y,R,X,b0,B0,c0,C0,E0,Et,S,m,beta_r,lambda_r = 3,lambda_y = 1,rep=1))
+# summary(g1,m/2,TV)
+# plot(g1,type='l')
 ####test2 random value as init value
 Sys.time()
-system.time(g2<-mcmc.hmm(Y.missing,R,X,b0,B0,c0,C0,E0,Et,S_r,m,beta_r0,lambda_r = 3,lambda_y = 0.5,rep=1))
+system.time(g2<-mcmc.hmm(Y.missing,R,X,b0,B0,c0,C0,E0,Et,S_r,m,beta_r1,lambda_r = 3,lambda_y = 0.3,rep=1))
 summary(g2,m/2,TV)
-plot(g2)
+plot(g2,type="l")
 Sys.time()
