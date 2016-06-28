@@ -266,7 +266,7 @@ mcmc.hmm=function(Y,R,X,b0,B0,c0,C0,E0,Et,S,m,beta0_r=NULL,lambda_y=1,lambda_r=1
     # 
     #sample beta_r 
     
-    #forward backward to calculate full condition of S
+    # #forward backward to calculate full condition of S
     for(nr in 1:NY){
       for(nc in 1:Ti){
         Psit=forward_t(nc,X[nr,],Y[nr,],R[nr,],betak,sigmak,betak_r,D,Dt)*backward_t(nc,X[nr,],Y[nr,],R[nr,],betak,sigmak,betak_r,D,Dt)
@@ -284,24 +284,25 @@ mcmc.hmm=function(Y,R,X,b0,B0,c0,C0,E0,Et,S,m,beta0_r=NULL,lambda_y=1,lambda_r=1
     #     S[nr,nc]=sample.int(p,1,prob=Psit)
     #   }
     # }
-
-    for(k in 1:p){
-      yk=Y[S==k]
-      rk=R[S==k]
-      if(i %% 50 ==1){
-        print("beta_r information matrix:")
-        print(lambda_r*im_beta_r(yk,betak_r[k,]))
-      }
-      #temp=mvrnorm(1,betak_r[k,],lambda_r*im_beta_r(yk,betak_r[k,]))
-      temp=mvrnorm(1,betak_r[k,],lambda_r*im_beta_r(yk))  #lambda_r to control accept rate,using betak_r[k,]=0
-      #temp=mvrnorm(1,betak_r[k,],diag(c(1,0.5))) #fix the normal variance
-      alpha=min(1,ln_beta_r_ratio(rk,yk,temp,betak_r[k,]))
-      U01=runif(1)
-      if(U01<alpha){
-        betak_r[k,]=temp
-        accept_r=accept_r+1
-      }
-    }
+    
+    #renew beta_r
+    # for(k in 1:p){
+    #   yk=Y[S==k]
+    #   rk=R[S==k]
+    #   if(i %% 50 ==1){
+    #     print("beta_r information matrix:")
+    #     print(lambda_r*im_beta_r(yk,betak_r[k,]))
+    #   }
+    #   #temp=mvrnorm(1,betak_r[k,],lambda_r*im_beta_r(yk,betak_r[k,]))
+    #   temp=mvrnorm(1,betak_r[k,],lambda_r*im_beta_r(yk))  #lambda_r to control accept rate,using betak_r[k,]=0
+    #   #temp=mvrnorm(1,betak_r[k,],diag(c(1,0.5))) #fix the normal variance
+    #   alpha=min(1,ln_beta_r_ratio(rk,yk,temp,betak_r[k,]))
+    #   U01=runif(1)
+    #   if(U01<alpha){
+    #     betak_r[k,]=temp
+    #     accept_r=accept_r+1
+    #   }
+    # }
 
     old_Y=Y #for calc accept rate of missing y
     
@@ -562,8 +563,8 @@ Prob=c(0.3,0.3,0.4)    #setting init probability for HMM
 Prob.t=rep(c(0.6,0.25,0.15,0.2,0.6,0.2,0.15,0.25,0.6),2)
 dim(Prob.t)=c(3,3,2)   #setting transfer probability for HMM
 
-#beta_r=array(c(2,2.5,3,-0.5,-0.5,-1),dim=c(3,2)) #setting beta_r for logit functiuon
-beta_r=array(c(3,3,3,-1,-1,-1),dim=c(3,2)) #setting beta_r for logit functiuon
+beta_r=array(c(2,2.5,3,-0.5,-0.5,-1),dim=c(3,2)) #setting beta_r for logit functiuon
+#beta_r=array(c(3,3,3,-1,-1,-1),dim=c(3,2)) #setting beta_r for logit functiuon
 
 ####generate HMM and data and drop some data with beta_r
 temp=HMM.data(X,Prob,Prob.t,beta.t,sigma.t,T) 
@@ -607,7 +608,7 @@ m=2000
 # plot(g1,type='l')
 ####test2 random value as init value
 Sys.time()
-system.time(g2<-mcmc.hmm(Y.missing,R,X,b0,B0,c0,C0,E0,Et,S_r,m,beta_r1,lambda_r = 3,lambda_y = 0.3,rep=1))
+system.time(g2<-mcmc.hmm(Y.missing,R,X,b0,B0,c0,C0,E0,Et,S_r,m,beta_r,lambda_r = 3,lambda_y = 0.3,rep=1))
 summary(g2,m/2,TV)
 plot(g2,type="l")
 Sys.time()
