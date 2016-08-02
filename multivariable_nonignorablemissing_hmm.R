@@ -47,7 +47,7 @@ HMMdata_missing=function(X,Beta,Sigma,Pi0,Pit,logit_beta,na=NA){
 
 
 
-mcmc.hmm=function(Y,X,b0,B0,c0,C0,E0,Et,S,R,init_Y=NULL,logistic_beta,m,lambda_y=1,lambda_logit=1,rep=1){
+mcmc.hmm=function(Y,X,b0,B0,c0,C0,E0,Et,S,R,logistic_beta,m,lambda_y=1,lambda_logit=1,rep=1){
   #initial value
   d=ncol(X)    #numbers of beta
   p=length(E0) #levels of hidden variable 
@@ -65,12 +65,8 @@ mcmc.hmm=function(Y,X,b0,B0,c0,C0,E0,Et,S,R,init_Y=NULL,logistic_beta,m,lambda_y
   Dt=array(dim=c(p,p,Ti-1)) #transfer matrix [f(u_j|u_hat_i)]
   NS=array(dim=c(p,Ti))
   NSt=array(dim=c(p,p,Ti-1))
-  
-  if(is.null(init_Y)){
-    Y[R]=runif(sum(R),min(Y,na.rm = T),max(Y,na.rm = T))
-  }
-  else
-    Y[R]=init_Y[R]
+  if(sum(is.na(Y)>0))
+    Y[R==1]=runif(sum(R),min(Y,na.rm = T),max(Y,na.rm = T))
   #random init Y
   
   p.betak=array(dim=c(p,d,Ti,m,MY))
@@ -93,15 +89,15 @@ mcmc.hmm=function(Y,X,b0,B0,c0,C0,E0,Et,S,R,init_Y=NULL,logistic_beta,m,lambda_y
     
   }
   
-  y_ratio=function(j,y_old,y_new,x,beta,sigma2,logistic_beta,r){
+  y_ratio=function(j,y_old,y_new,x,beta,sigma2,logistic_beta,r_M){
     #this function is to calc the loglikelihood ratio for y_new/y_old
     #y_old and y_new are diff in the jth element
     #beta and sigma are the parameter of the jth element
     #logistic_beta and r is the corresponding vector
     #M is globle variable indicate the dimension of Y
     log_ratio=((y_old[j+1]-sum(x*beta))^2-(y_new[j+1]-sum(x*beta))^2)/(2*sigma2)+
-      sum(r)*logistic_beta[j+1]*(y_new[j+1]-y_old[j+1])+
-      M*(log(1+exp(sum(logistic_beta*y_old)))-log(1+exp(sum(logistic_beta*y_new))))
+      sum(r_M)*logistic_beta[j+1]*(y_new[j+1]-y_old[j+1])+
+      MY*(log(1+exp(sum(logistic_beta*y_old)))-log(1+exp(sum(logistic_beta*y_new))))
     return(exp(log_ratio))
   }
   
@@ -113,15 +109,15 @@ mcmc.hmm=function(Y,X,b0,B0,c0,C0,E0,Et,S,R,init_Y=NULL,logistic_beta,m,lambda_y
     #r_rowsum is a vector (length of Nk) indicate total missing elements of every sample
     # belong to the kth hidden class
     delta=lg_beta_new-lg_beta_old
-    log_ratio=sum(r_rowsum*Y%*%delta)+sum(M*log(1+exp(Y%*%lg_beta_old))-
-                                            M*log(1+exp(Y%*%lg_beta_new)))
+    log_ratio=sum(r_rowsum*(Y%*%delta))+sum(MY*log(1+exp(Y%*%lg_beta_old))-
+                                            MY*log(1+exp(Y%*%lg_beta_new)))
     return(exp(log_ratio))
   }
   
   im_y=function(j,sigma,logistic_beta){
     #This function is to calc information matrix when sample Yijt
     #actually return a numerical object
-    im_inv=M*(logistic_beta[j+1]^2)/((1+exp(logistic_beta[0]))^2)+1/sigma
+    im_inv=MY*(logistic_beta[j+1]^2)*exp(logistic_beta[1])/((1+exp(logistic_beta[1]))^2)+1/sigma
     im=1/im_inv
     return(im)
   }
@@ -131,7 +127,7 @@ mcmc.hmm=function(Y,X,b0,B0,c0,C0,E0,Et,S,R,init_Y=NULL,logistic_beta,m,lambda_y
     #return M+1 * M+1 dimension matrix
     im_inv_vec=apply(Y,1,function(x)x%*%t(x))
     im_inv=rowSums(im_inv_vec)/4
-    dim(im_inv)=rep(M+1,2)
+    dim(im_inv)=rep(MY+1,2)
     im=solve(im_inv)
     return(im)
     
@@ -178,11 +174,13 @@ mcmc.hmm=function(Y,X,b0,B0,c0,C0,E0,Et,S,R,init_Y=NULL,logistic_beta,m,lambda_y
       for(t in 1:Ti){
         for(mi in 1:MY){
           if(R[ni,t,mi]==1){
-            temp_yijt=im_y(mi,sigmak[S[ni,t],t,mi],logistic_beta[S[ni,t],]) %>%
-              rnorm(Y[ni,t,mi],lambda_y*sqrt(.))
-            temp=Y[ni,t,]
-            temp[mi]=temp_yijt
-            alpha=y_ratio(mi,Y[ni,t,mi],temp,X[ni,t],betak[S[ni,t],,t,mi],
+            #temp_yijt_im=im_y(mi,sigmak[S[ni,t],t,mi],logistic_beta[S[ni,t],])
+            temp_yijt_im=0.5
+            temp_yijt=rnorm(1,Y[ni,t,mi],lambda_y*sqrt(temp_yijt_im))
+            temp_old=c(1,Y[ni,t,])
+            temp_new=temp_old
+            temp_new[mi+1]=temp_yijt
+            alpha=y_ratio(mi,temp_old,temp_new,X[ni,t],betak[S[ni,t],,t,mi],
                           sigmak[S[ni,t],t,mi],logistic_beta[S[ni,t],],R[ni,t,])
             U_y=runif(1)
             if(U_y<alpha)
@@ -192,50 +190,50 @@ mcmc.hmm=function(Y,X,b0,B0,c0,C0,E0,Et,S,R,init_Y=NULL,logistic_beta,m,lambda_y
       }
     }
     
-    #renew logistic_beta
-    S_vec=as.vector(S)
-    R_col=R
-    dim(R_col)=c(NY*Ti,M)
-    Y_col=Y
-    dim(Y_col)=c(NY*Ti,M)
-    Y_col=cbind(rep(1,NY*Ti),Y_col)
-    for (k in 1:p) {
-      Yk=Y_col[S_vec==k,]
-      Rk=R_col[S_vec==k,]
-      temp=mvrnorm(1,logistic_beta[k,],lambda_logit*im_logistic_beta(Yk))
-      alpha=logistic_beta_ratio(Y,logistic_beta[k,],temp,rowSums(R_col))
-      U_logit=runif(1)
-      if(U_logit<alpha)
-        logistic_beta[k,]=temp
-    }
+    # #renew logistic_beta
+    # S_vec=as.vector(S)
+    # R_col=R
+    # dim(R_col)=c(NY*Ti,MY)
+    # Y_col=Y
+    # dim(Y_col)=c(NY*Ti,MY)
+    # Y_col=cbind(rep(1,NY*Ti),Y_col)
+    # for (k in 1:p) {
+    #   Yk=Y_col[S_vec==k,]
+    #   Rk=R_col[S_vec==k,]
+    #   temp=mvrnorm(1,logistic_beta[k,],lambda_logit*im_logistic_beta(Yk))
+    #   alpha=logistic_beta_ratio(Yk,logistic_beta[k,],temp,rowSums(Rk))
+    #   U_logit=runif(1)
+    #   if(U_logit<alpha)
+    #     logistic_beta[k,]=temp
+    # }
     
-    #FFBS renew hidden variable altnative code
-    f.density=function(y,x,beta,sigma){
-      res=1
-      for(myi in 1:MY){
-        m=as.vector(beta[,,myi]%*%x)
-        s=sqrt(sigma[,myi])
-        p=dnorm(y[myi],m,s)
-        p=p/sum(p)
-        res=res*p
-      }
-      return(res)
-    }
-    P.S.Update=array(dim=c(Ti,p,NY))
-    for(nr in 1:NY){
-      P.S.Update[1,,nr]=D*f.density(Y[nr,1,],X[nr,],betak[,,1,],sigmak[,1,])
-      for(t in 2:Ti){
-        P.S.Update[t,,nr]=t(P.S.Update[t-1,,nr])%*%Dt[,,t-1]*
-          f.density(Y[nr,t,],X[nr,],betak[,,t,],sigmak[,t,])
-      }
-    }
-    for(nr in 1:NY){
-      S[nr,Ti]=sample.int(p,1,prob = P.S.Update[Ti,,nr])
-      for(t in (Ti-1):1){
-        s.temp=P.S.Update[t,,nr]*Dt[,S[nr,t+1],t]
-        S[nr,t]=sample.int(p,1,prob = s.temp)
-      }
-    }
+    # #FFBS renew hidden variable altnative code
+    # f.density=function(y,x,beta,sigma){
+    #   res=1
+    #   for(myi in 1:MY){
+    #     m=as.vector(beta[,,myi]%*%x)
+    #     s=sqrt(sigma[,myi])
+    #     p=dnorm(y[myi],m,s)
+    #     p=p/sum(p)
+    #     res=res*p
+    #   }
+    #   return(res)
+    # }
+    # P.S.Update=array(dim=c(Ti,p,NY))
+    # for(nr in 1:NY){
+    #   P.S.Update[1,,nr]=D*f.density(Y[nr,1,],X[nr,],betak[,,1,],sigmak[,1,])
+    #   for(t in 2:Ti){
+    #     P.S.Update[t,,nr]=t(P.S.Update[t-1,,nr])%*%Dt[,,t-1]*
+    #       f.density(Y[nr,t,],X[nr,],betak[,,t,],sigmak[,t,])
+    #   }
+    # }
+    # for(nr in 1:NY){
+    #   S[nr,Ti]=sample.int(p,1,prob = P.S.Update[Ti,,nr])
+    #   for(t in (Ti-1):1){
+    #     s.temp=P.S.Update[t,,nr]*Dt[,S[nr,t+1],t]
+    #     S[nr,t]=sample.int(p,1,prob = s.temp)
+    #   }
+    # }
     
     
     #label switch
@@ -248,6 +246,7 @@ mcmc.hmm=function(Y,X,b0,B0,c0,C0,E0,Et,S,R,init_Y=NULL,logistic_beta,m,lambda_y
       S[,t]=rank(base[,t])[S[,t]]
     }
     D=D[order(base[,1])]
+    logistic_beta=logistic_beta[order(base[,1]),]
     for(t in 1:(Ti-1)){
       #switch Dt
       Dt[,,t]=Dt[order(base[,t]),order(base[,t+1]),t]
@@ -260,8 +259,9 @@ mcmc.hmm=function(Y,X,b0,B0,c0,C0,E0,Et,S,R,init_Y=NULL,logistic_beta,m,lambda_y
     p.sigmak[,,i,]=sigmak
     p.D[,i]=D
     p.Dt[,,,i]=Dt
+    p.logistic_beta[,,i]=logistic_beta
   }
-  ParaMeters=list(p.betak=p.betak,p.sigmak=p.sigmak,p.D=p.D,p.Dt=p.Dt)
+  ParaMeters=list(p.betak=p.betak,p.sigmak=p.sigmak,p.D=p.D,p.Dt=p.Dt,p.logistic_beta=p.logistic_beta)
   class(ParaMeters)="hmm"
   if(rep==1)
     return(ParaMeters)
@@ -269,7 +269,7 @@ mcmc.hmm=function(Y,X,b0,B0,c0,C0,E0,Et,S,R,init_Y=NULL,logistic_beta,m,lambda_y
     groups=list()
     groups[[1]]=ParaMeters
     for(r in 2:rep)
-      groups[[r]]=gibbs.hmm(Y,X,b0,B0,c0,C0,E0,Et,S,m,rep=1)
+      groups[[r]]=gibbs.hmm(Y,X,b0,B0,c0,C0,E0,Et,S,R,logistic_beta,m,lambda_y,lambda_logit,rep=1)
     class(groups)='hmmgroups'
   }
   return(groups)
@@ -290,12 +290,16 @@ summary.hmm=function(data,n){
   init.distribution.sd=apply(data$p.D[,(len-n+1):len],1,sd)
   transfer.matrix=apply(data$p.Dt[,,,(len-n+1):len],c(1,2,3),mean)
   transfer.matrix.sd=apply(data$p.Dt[,,,(len-n+1):len],c(1,2,3),sd)
+  logit_beta=apply(data$p.logistic_beta[,,(len-n+1):len],c(1,2),mean)
+  logit_beta.sd=apply(data$p.logistic_beta[,,(len-n+1):len],c(1,2),sd)
   
   summary.hmm=list(beta=beta,beta.sd=beta.sd,sigma=sigma,sigma.sd=sigma.sd,
                    init.distribution=init.distribution,
                    init.distribution.sd=init.distribution.sd,
                    transfer.matrix=transfer.matrix,
-                   transfer.matrix.sd=transfer.matrix.sd)
+                   transfer.matrix.sd=transfer.matrix.sd,
+                   logit_beta=logit_beta,
+                   logit_beta.sd=logit_beta.sd)
   return(summary.hmm)
 }
 
@@ -357,7 +361,7 @@ summary.hmmgroups=function(data,n,TrueValue=NULL){
 
 sz=1000
 MY=2
-X=cbind(rep(1,sz),runif(sz,-5,5),rnorm(10))
+X=cbind(rep(1,sz),runif(sz,0,5),rnorm(sz,2))
 Sigma=array(0.3,dim=c(3,3,2))
 Pi0=c(0.3,0.4,0.3)
 Pit=array(rep(c(0.6,0.2,0.15,0.25,0.6,0.25,0.15,0.2,0.6),2),dim=c(3,3,2))
@@ -381,8 +385,7 @@ for (ti in 1:3) {
 logit_beta=matrix(c(-3,1,1,-2,0.5,0.5,-1,0.25,0.75),3,3,byrow=T)
 HD=HMMdata_missing(X,Beta,Sigma,Pi0,Pit,logit_beta)
 Y=HD$Y
-Y.missing=HD$Y
-S=HD$S
+Y.missing=HD$Y.missing
 R=HD$R
 
 # table(test$S[,1])/sz
@@ -403,9 +406,10 @@ c0=rep(1.28,MY)
 C0=0.36*apply(Y,3,sd)^2
 E0=c(1,1,1)
 Et=Pit*2
+logit_beta_random=matrix(c(-1,-1,-1,0,0,0,0,0,0),3,3)
 m=2000
 Sys.time()
-#system.time(g<-mcmc.hmm(Y,X,b0,B0,c0,C0,E0,Et,S,m,rep=1))
+system.time(g2<-mcmc.hmm(Y,X,b0,B0,c0,C0,E0,Et,S.T,R,logit_beta,m,lambda_y=1,lambda_logit=1,rep=1))
 Sys.time()
-summary(g,m-1000)
+summary(g,m/2)
 
